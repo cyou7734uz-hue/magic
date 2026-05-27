@@ -68,22 +68,25 @@ hands=results;
 
 function draw(){
 
-push(); // 儲存當前繪圖狀態
-translate(width, 0); // 將原點移動到畫布右側
-scale(-1, 1); // 沿著 Y 軸翻轉，實現鏡像效果
-
 background(20,20,40);
 
-image(
+// 1. 繪製視訊與骨架
+push(); // 儲存目前的繪圖狀態
+translate(width, 0); // 將原點移動到畫布右側
+scale(-1, 1); // 水平翻轉畫布
+image( // 繪製視訊，現在會是非鏡像的
 video,
 0,
 0,
 width,
 height
 );
+pop(); // 恢復原始繪圖狀態
 
+drawHandSkeleton();
+
+// 2. 非鏡像 UI 繪製
 fill(0,0,0,120);
-
 rect(
 0,
 0,
@@ -93,28 +96,12 @@ height
 
 drawUI();
 
-drawHandSkeleton();
-
 let finger=getIndexFinger();
-
 if(finger){
-
 fill(255,255,0);
-
-circle(
-finger.x,
-finger.y,
-20
-);
-
-handleCardDrag(
-finger
-);
-
+circle(finger.x, finger.y, 20);
+handleCardDrag(finger);
 }
-
-pop(); // 恢復之前的繪圖狀態
-
 }
 
 
@@ -420,11 +407,11 @@ hands.length>0
 
 let finger=
 
-hands[0].index_finger_tip; // 由於整個畫面已經鏡像，這裡不需要再反轉 X 軸
+hands[0].index_finger_tip; 
 
 return{
-
-x:finger.x,
+ // 由於畫面已取消鏡像，這裡需要反轉 X 軸
+x: width - finger.x,
 
 y:finger.y
 
@@ -470,15 +457,14 @@ let p=
 hand.keypoints[key];
 
 fill(
-
-0, // 由於整個畫面已經鏡像，這裡不需要再反轉 X 軸
+ // 由於畫面已取消鏡像，這裡需要反轉 X 軸
+0,
 255,
 255
 );
 
 circle(
-
-p.x,
+width - p.x, // 反轉 X 軸
 p.y,
 10
 
@@ -535,26 +521,17 @@ let b=
 
 hand[l[1]];
 
-if(
-
-a&&b // 由於整個畫面已經鏡像，這裡不需要再反轉 X 軸
-
-){
+if(a&&b){
 
 line(
-
-a.x,
+width - a.x, // 反轉 X 軸
 a.y,
-
-b.x,
+width - b.x, // 反轉 X 軸
 b.y
 
 );
-
 }
-
 }
-
 }
 
 
