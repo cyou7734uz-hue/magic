@@ -9,6 +9,7 @@ let question;
 let correctAnswer;
 
 let draggingCard = null;
+let handLostTimer = 0; // 新增：防止偵測閃爍的計時器
 
 let monsterHP = 100;
 let score = 0;
@@ -20,10 +21,8 @@ let message = "用食指抓取答案卡，拖到魔法陣";
 // 載入模型
 //========================
 
-function preload(){
-
-handpose=ml5.handPose();
-
+function preload() {
+  // 目前改為 setup() 中載入手勢模型
 }
 
 
@@ -35,16 +34,13 @@ function setup(){
 
 createCanvas(windowWidth,windowHeight);
 
-video=createCapture(VIDEO);
-
-video.size(width,height);
-
+video = createCapture(VIDEO);
+video.size(width, height);
 video.hide();
 
-handpose.detectStart(
-video,
-gotHands
-);
+handpose = ml5.handPose(video, modelReady);
+// ml5 v1 新版語法：使用 detectStart 開始持續偵測
+handpose.detectStart(video, gotHands);
 
 newQuestion();
 
@@ -56,9 +52,15 @@ newQuestion();
 //========================
 
 function gotHands(results){
+  hands = results;
+}
 
-hands=results;
-
+function modelReady() {
+  console.log("Handpose model ready");
+  let loading = document.getElementById("loading");
+  if (loading) {
+    loading.style.display = "none";
+  }
 }
 
 
@@ -96,11 +98,28 @@ height
 
 drawUI();
 
-let finger=getIndexFinger();
-if(finger){
-fill(255,255,0);
-circle(finger.x, finger.y, 20);
-handleCardDrag(finger);
+let finger = getIndexFinger();
+let thumb = getThumbFinger();
+
+if (finger && thumb) {
+  handLostTimer = 0; // 偵測到手，重置計時器
+  // 計算食指與大拇指的距離
+  let d = dist(finger.x, finger.y, thumb.x, thumb.y);
+  let isPinched = d < 50; // 稍微放寬門檻到 50 像素，增加成功率
+
+  if (isPinched) {
+    fill(0, 255, 0); // 捏合時顯示綠色
+  } else {
+    fill(255, 255, 0); // 未捏合顯示黃色
+  }
+  circle(finger.x, finger.y, 20);
+  handleCardDrag(finger, isPinched);
+} else {
+  // 即使失去偵測，也多等 10 幀才放開，防止畫面閃爍導致掉卡
+  handLostTimer++;
+  if (handLostTimer > 10) {
+    draggingCard = null;
+  }
 }
 }
 
@@ -294,6 +313,20 @@ answerBox.h/2
 
 }
 
+function getThumbFinger() {
+  if (hands.length > 0) {
+    let hand = hands[0];
+    // 大拇指尖端索引為 4
+    let fingerPoint = hand.keypoints[4];
+    return {
+      x: width - fingerPoint.x, // 反轉 X 軸對應鏡像畫面
+      y: fingerPoint.y
+    };
+  }
+
+  return null;
+}
+
 
 //========================
 // 出題
@@ -345,6 +378,7 @@ wrong2
 
 ]);
 
+let startX = width / 2 - 220; // 根據螢幕寬度動態計算起始 X
 
 cards=[];
 
@@ -359,7 +393,7 @@ i++
 
 cards.push({
 
-x:220+i*180,
+x:startX + i*180,
 
 y:100,
 
@@ -369,7 +403,7 @@ h:80,
 
 value:answers[i],
 
-originalX:220+i*180,
+originalX:startX + i*180,
 
 originalY:100
 
@@ -397,30 +431,19 @@ h:100
 // 食指位置
 //========================
 
-function getIndexFinger(){
+function getIndexFinger() {
+  if (hands.length > 0) {
+    let hand = hands[0];
+    // ml5 v1 新版資料結構：使用 keypoints 陣列，索引 8 是食指尖端
+    // keypoint 是包含 x, y 屬性的物件
+    let fingerPoint = hand.keypoints[8];
+    return {
+      x: width - fingerPoint.x, // 反轉 X 軸對應鏡像畫面
+      y: fingerPoint.y
+    };
+  }
 
-if(
-
-hands.length>0
-
-){
-
-let finger=
-
-hands[0].index_finger_tip; 
-
-return{
- // 由於畫面已取消鏡像，這裡需要反轉 X 軸
-x: width - finger.x,
-
-y:finger.y
-
-};
-
-}
-
-return null;
-
+  return null;
 }
 
 
@@ -428,110 +451,50 @@ return null;
 // 畫手勢骨架
 //========================
 
-function drawHandSkeleton(){
+function drawHandSkeleton() {
+  if (hands.length === 0) {
+    return;
+  }
 
-if(
+  let hand = hands[0];
 
-hands.length===0
+  push();
+  translate(width, 0);
+  scale(-1, 1);
 
-){
+  // 1. 繪製骨架連接線
+  stroke(0, 255, 255);
+  strokeWeight(2);
+  noFill();
 
-return;
+  // 定義手指的連接路徑 (索引參考 MediaPipe 手勢模型)
+  let fingerPaths = [
+    [0, 1, 2, 3, 4],    // 大拇指
+    [0, 5, 6, 7, 8],    // 食指
+    [0, 9, 10, 11, 12],  // 中指
+    [0, 13, 14, 15, 16], // 無名指
+    [0, 17, 18, 19, 20], // 小指
+    [5, 9, 13, 17]       // 掌心/指根連線
+  ];
 
-}
+  for (let path of fingerPaths) {
+    beginShape();
+    for (let index of path) {
+      let kp = hand.keypoints[index];
+      vertex(kp.x, kp.y);
+    }
+    endShape();
+  }
 
+  // 2. 繪製關鍵點
+  noStroke();
+  fill(0, 255, 255);
+  for (let i = 0; i < hand.keypoints.length; i++) {
+    let keypoint = hand.keypoints[i];
+    circle(keypoint.x, keypoint.y, 10);
+  }
 
-let hand=
-
-hands[0];
-
-
-for(
-
-let key in hand.keypoints
-
-){
-
-let p=
-
-hand.keypoints[key];
-
-fill(
- // 由於畫面已取消鏡像，這裡需要反轉 X 軸
-0,
-255,
-255
-);
-
-circle(
-width - p.x, // 反轉 X 軸
-p.y,
-10
-
-);
-
-}
-
-
-let lines=[
-
-["thumb_tip","thumb_ip"],
-
-["thumb_ip","thumb_mcp"],
-
-["index_finger_tip","index_finger_dip"],
-
-["index_finger_dip","index_finger_pip"],
-
-["index_finger_pip","index_finger_mcp"],
-
-["middle_finger_tip","middle_finger_dip"],
-
-["middle_finger_dip","middle_finger_pip"],
-
-["ring_finger_tip","ring_finger_dip"],
-
-["pinky_finger_tip","pinky_finger_dip"]
-
-];
-
-
-stroke(
-
-0,
-255,
-255
-
-);
-
-strokeWeight(3);
-
-
-for(
-
-let l of lines
-
-){
-
-let a=
-
-hand[l[0]];
-
-let b=
-
-hand[l[1]];
-
-if(a&&b){
-
-line(
-width - a.x, // 反轉 X 軸
-a.y,
-width - b.x, // 反轉 X 軸
-b.y
-
-);
-}
-}
+  pop();
 }
 
 
@@ -540,124 +503,47 @@ b.y
 //========================
 
 function handleCardDrag(
-
-finger
-
+  finger,
+  isPinched
 ){
-
-if(
-
-draggingCard==null
-
-){
-
-for(
-
-let card of cards
-
-){
-
-if(
-
-finger.x>
-
-card.x
-
-&&
-
-finger.x<
-
-card.x+
-card.w
-
-&&
-
-finger.y>
-
-card.y
-
-&&
-
-finger.y<
-
-card.y+
-card.h
-
-){
-
-draggingCard=
-
-card;
-
-break;
-
-}
-
-}
-
-}
-
-
-if(
-
-draggingCard
-
-){
-
-draggingCard.x=
-
-finger.x-
-
-draggingCard.w/2;
-
-
-draggingCard.y=
-
-finger.y-
-
-draggingCard.h/2;
-
-
-if(
-
-finger.x>
-
-answerBox.x
-
-&&
-
-finger.x<
-
-answerBox.x+
-answerBox.w
-
-&&
-
-finger.y>
-
-answerBox.y
-
-&&
-
-finger.y<
-
-answerBox.y+
-answerBox.h
-
-){
-
-checkAnswer(
-
-draggingCard
-
-);
-
-draggingCard=null;
-
-}
-
-}
-
+  if (draggingCard == null) {
+    // 尚未抓取卡片：必須在「捏合」狀態且手指在卡片範圍內才觸發抓取
+    if (isPinched) {
+      for (let card of cards) {
+        if (
+          finger.x > card.x &&
+          finger.x < card.x + card.w &&
+          finger.y > card.y &&
+          finger.y < card.y + card.h
+        ) {
+          draggingCard = card;
+          break;
+        }
+      }
+    }
+  } else {
+    // 正在拖曳中
+    if (isPinched) {
+      // 持續捏合：更新卡片位置跟隨手指
+      draggingCard.x = finger.x - draggingCard.w / 2;
+      draggingCard.y = finger.y - draggingCard.h / 2;
+    } else {
+      // 放開捏合（Drop）：檢查是否丟進回答魔法陣
+      if (
+        finger.x > answerBox.x &&
+        finger.x < answerBox.x + answerBox.w &&
+        finger.y > answerBox.y &&
+        finger.y < answerBox.y + answerBox.h
+      ) {
+        checkAnswer(draggingCard);
+      } else {
+        // 沒丟進魔法陣，卡片彈回原位
+        draggingCard.x = draggingCard.originalX;
+        draggingCard.y = draggingCard.originalY;
+      }
+      draggingCard = null;
+    }
+  }
 }
 
 
