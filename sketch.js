@@ -11,6 +11,12 @@ let correctAnswer;
 let draggingCard = null;
 let handLostTimer = 0; // 新增：防止偵測閃爍的計時器
 
+let gameState = "START"; // 遊戲狀態：START (封面) 或 PLAY (遊戲中)
+let coverImg;
+let btnImg;
+let infoBtnImg;
+let infoBgImg; // 新增說明畫面底圖變數
+
 let monsterHP = 100;
 let score = 0;
 
@@ -22,7 +28,10 @@ let message = "用食指抓取答案卡，拖到魔法陣";
 //========================
 
 function preload() {
-  // 目前改為 setup() 中載入手勢模型
+  coverImg = loadImage('封面/封面底圖.png');
+  btnImg = loadImage('封面/進入.png');
+  infoBtnImg = loadImage('封面/說明.png');
+  infoBgImg = loadImage('封面/說明底圖.png'); // 載入說明底圖
 }
 
 
@@ -69,6 +78,87 @@ function modelReady() {
 //========================
 
 function draw(){
+
+if (gameState === "START" || gameState === "INFO") {
+  // 繪製封面
+  if (!coverImg) {
+    background(50); // 若圖片載入失敗，顯示深灰色背景避免當機
+  }
+  image(coverImg, 0, 0, width, height);
+
+  let floatY = sin(millis() * 0.002) * 10;
+  let baseW = 450; // 加大主按鈕 (原本 300)
+  let baseH = btnImg ? btnImg.height * (baseW / btnImg.width) : 80;
+
+  if (gameState === "START") {
+    // --- 1. 進入遊戲按鈕 (恢復置中) ---
+    let btn1X = width/2 - baseW/2;
+    let btn1Y = height * 0.75 - 95 + floatY;
+    let isHover1 = mouseX > btn1X && mouseX < btn1X + baseW && mouseY > btn1Y && mouseY < btn1Y + baseH;
+    
+    // --- 2. 遊戲說明按鈕 (右下角，縮小，改用圖片) ---
+    let btn2W = 160; // 加大說明按鈕 (原本 100)
+    let btn2H = infoBtnImg ? infoBtnImg.height * (btn2W / infoBtnImg.width) : 35;
+    let btn2X = btn1X + baseW - btn2W; 
+    let btn2Y = btn1Y + baseH + 10;
+    let isHover2 = mouseX > btn2X && mouseX < btn2X + btn2W && mouseY > btn2Y && mouseY < btn2Y + btn2H;
+
+    if (isHover1 || isHover2) cursor(HAND);
+    else cursor(ARROW);
+
+    // 繪製按鈕 1 (圖片)
+    let finalW1 = isHover1 ? baseW * 1.05 : baseW;
+    let finalH1 = isHover1 ? baseH * 1.05 : baseH;
+    if (btnImg) {
+      image(btnImg, btn1X - (finalW1-baseW)/2, btn1Y - (finalH1-baseH)/2, finalW1, finalH1);
+    }
+
+    // 繪製按鈕 2 (圖片)
+    let finalW2 = isHover2 ? btn2W * 1.05 : btn2W;
+    let finalH2 = infoBtnImg ? infoBtnImg.height * (finalW2 / infoBtnImg.width) : btn2H;
+    
+    if (infoBtnImg) {
+      image(infoBtnImg, btn2X - (finalW2-btn2W)/2, btn2Y - (finalH2-btn2H)/2, finalW2, finalH2);
+    }
+
+  } else if (gameState === "INFO") {
+    // --- 說明畫面內容 ---
+    if (infoBgImg) {
+      image(infoBgImg, 100, 100, width - 200, height - 200); // 使用圖片作為背景
+    } else {
+      fill(0, 0, 0, 200);
+      rect(100, 100, width - 200, height - 200, 20);
+    }
+    fill(101, 67, 33); // 改為咖啡色，配合羊皮紙底圖質感
+    textAlign(CENTER);
+    
+    textSize(24);
+    textAlign(LEFT);
+    let infoText = "1. 觀察畫面中央出現的乘法魔法題。\n" +
+                   "2. 使用食指與大拇指在空中「捏合」來抓取答案卡。\n" +
+                   "3. 將正確答案拖曳至下方的「回答魔法陣」。\n" +
+                   "4. 答對可削減怪物 HP，將其擊敗獲得高分！";
+    text(infoText, width/2 - 250, height/2 - 50);
+
+    // 返回按鈕
+    let backBtnX = width/2 - 100;
+    let backBtnY = height - 220;
+    let isHoverBack = mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60;
+    
+    if (isHoverBack) cursor(HAND);
+    else cursor(ARROW);
+
+    fill(isHoverBack ? 150 : 100, 50, 150);
+    stroke(255);
+    rect(backBtnX, backBtnY, 200, 60, 10);
+    fill(255);
+    noStroke();
+    textAlign(CENTER, CENTER);
+    text("返回", width/2, backBtnY + 30);
+  }
+
+  return; // 跳出 draw，不執行後續遊戲邏輯
+}
 
 background(20,20,40);
 
@@ -268,7 +358,6 @@ card.h/2+10
 
 }
 
-
 //回答格
 
 noFill();
@@ -311,6 +400,45 @@ answerBox.h/2
 
 );
 
+}
+
+//========================
+// 點擊事件：切換遊戲狀態
+//========================
+function mousePressed() {
+  if (gameState === "START" && btnImg) {
+    let baseW = 450; // 同步加大判定範圍
+    let baseH = btnImg.height * (baseW / btnImg.width);
+    let floatY = sin(millis() * 0.002) * 10;
+
+    // 進入遊戲按鈕判定
+    let btn1X = width/2 - baseW/2;
+    let btn1Y = height * 0.75 - 95 + floatY;
+
+    if (mouseX > btn1X && mouseX < btn1X + baseW &&
+        mouseY > btn1Y && mouseY < btn1Y + baseH) {
+      gameState = "PLAY";
+      cursor(ARROW); // 進入遊戲時將游標恢復原狀
+    }
+
+    // 遊戲說明按鈕判定
+    let btn2W = 160; // 同步加大判定範圍
+    let btn2H = infoBtnImg ? infoBtnImg.height * (btn2W / infoBtnImg.width) : 35;
+    let btn2X = btn1X + baseW - btn2W;
+    let btn2Y = btn1Y + baseH + 10;
+    if (mouseX > btn2X && mouseX < btn2X + btn2W &&
+        mouseY > btn2Y && mouseY < btn2Y + btn2H) {
+      gameState = "INFO";
+    }
+  } else if (gameState === "INFO") {
+    // 返回按鈕判定
+    let backBtnX = width/2 - 100;
+    let backBtnY = height - 220;
+    if (mouseX > backBtnX && mouseX < backBtnX + 200 &&
+        mouseY > backBtnY && mouseY < backBtnY + 60) {
+      gameState = "START";
+    }
+  }
 }
 
 function getThumbFinger() {
