@@ -24,6 +24,7 @@ let infoBgImg;
 let selectBgImg;
 let monsterImg;
 let monsterImg2;
+let victoryImg;
 let playBgImg;
 let monsterStage = 1; // 追蹤目前是第幾個怪物
 let selectedAcademy = "MATH";
@@ -31,6 +32,7 @@ let fadeAlpha = 0;
 let isPaused = false;
 let pendingState = null;
 
+let monsterVisualAlpha = 255; // 用於控制怪物被打敗時的透明度
 let particles = []; // 粒子陣列
 let monsterHP = 100;
 let score = 0;
@@ -63,6 +65,7 @@ function preload() {
   monsterImg = loadImage('圖/1.png');
   monsterImg2 = loadImage('圖/1-2.png');
   playBgImg = loadImage('圖/1-0.png');
+  victoryImg = loadImage('圖/666.png');
 }
 
 //========================
@@ -158,8 +161,9 @@ function draw(){
 
   // --- 1. 背景底圖層 ---
   if (gameState === "START" || gameState === "INFO" || gameState === "SELECT" || gameState === "VICTORY") {
-    if (!coverImg) background(50);
-    else image(coverImg, 0, 0, width, height);
+    let currentBg = (gameState === "VICTORY" && victoryImg) ? victoryImg : coverImg;
+    if (!currentBg) background(50);
+    else image(currentBg, 0, 0, width, height);
 
     let floatY = sin(millis() * 0.002) * 10;
     let baseW = 450; // 加大主按鈕
@@ -236,10 +240,13 @@ function draw(){
       text("返回", selBackX + 50, selBackY + 22);
 
     } else if (gameState === "VICTORY") {
+      // 加入旋轉魔法陣光效，並處理返回時的淡出
+      let vAlpha = 255;
+      if (pendingState === "START") vAlpha = 255 - fadeAlpha;
+      drawVictoryMagicCircle(width / 2, height / 2, vAlpha);
+
       fill(255);
       textAlign(CENTER, CENTER);
-      textSize(64);
-      text("戰鬥勝利！", width / 2, height / 2 - 50);
       textSize(32);
       text("你成功保衛了魔法學院，獲得分數：" + score, width / 2, height / 2 + 50);
 
@@ -251,6 +258,11 @@ function draw(){
       stroke(255);
       rect(backBtnX, backBtnY, 200, 60, 10);
       fill(255); noStroke(); text("回到首頁", width / 2, backBtnY + 30);
+
+      // 撒花特效：在勝利畫面持續產生落下粒子
+      if (frameCount % 2 === 0) {
+        particles.push(new Particle(random(width), -20, false, true));
+      }
     }
 
   } else if (gameState === "PLAY") {
@@ -287,14 +299,14 @@ function draw(){
     drawingContext.filter = 'none'; // 重置濾鏡，確保 UI 不會被模糊
     fill(0,0,0,120); rect(0,0,width,height);
     drawUI();
+  }
 
-    // 更新並繪製粒子
-    for (let i = particles.length - 1; i >= 0; i--) {
-      particles[i].update();
-      particles[i].display();
-      if (particles[i].isDead()) {
-        particles.splice(i, 1);
-      }
+  // 更新並繪製粒子 (移至外部，讓所有狀態皆可顯示特效)
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].display();
+    if (particles[i].isDead()) {
+      particles.splice(i, 1);
     }
   }
 
@@ -391,12 +403,30 @@ function drawUI(){
 
   let monsterFloat = sin(millis() * 0.002) * 15; // 計算緩慢上下擺動的位移
 
+  // 當怪物被打敗時，在背後顯示旋轉魔法陣
+  if (monsterHP <= 0) {
+    drawVictoryMagicCircle(width / 2, height / 2 + monsterFloat, 255 - monsterVisualAlpha);
+    monsterVisualAlpha = max(0, monsterVisualAlpha - 8); // 緩慢變透明
+  }
+
   // 怪物 (將原本的圓圈改為圖片)
   let currentMonsterImg = (monsterStage === 1) ? monsterImg : monsterImg2;
   if (currentMonsterImg) {
     push();
     imageMode(CENTER);
-    image(currentMonsterImg, width/2, height/2 + monsterFloat, 400, 300); 
+    let x = width / 2;
+    let y = height / 2 + monsterFloat;
+
+    if (monsterHP <= 0) {
+      tint(255, monsterVisualAlpha);
+      let progress = (255 - monsterVisualAlpha) / 255;
+      translate(x, y + progress * 100); // 增加下沉位移，使其沉入陣中
+      rotate(progress * TWO_PI * 3);   // 旋轉三圈，營造吸入感
+      scale(monsterVisualAlpha / 255); // 隨透明度縮小至 0
+      image(currentMonsterImg, 0, 0, 400, 300);
+    } else {
+      image(currentMonsterImg, x, y, 400, 300);
+    }
     pop();
   } else {
     fill(150,50,200); ellipse(width/2, height/2 + monsterFloat, 180, 180);
@@ -560,7 +590,9 @@ function handleTransition() {
         monsterHP = 100;
         monsterStage = 1;
         score = 0;
+        monsterVisualAlpha = 255;
         isPaused = false;
+        particles = []; // 回到首頁時清空粒子
       }
       pendingState = null;
     }
@@ -752,14 +784,22 @@ function checkAnswer(card){
         particles.push(new Particle(width / 2, height / 2 + monsterFloat, true));
       }
 
-      if (monsterStage === 1) {
-        monsterStage = 2;
-        monsterHP = 100;
-        message = "第一隻怪物倒下了！第二隻出現了！";
-        screenShake = 30; // 進入第二階段時觸發強烈震動
-      } else {
-        pendingState = "VICTORY";
-      }
+      // 增加延遲，讓怪物敗北動畫播完再切換狀態
+      let defeatDelay = 1500; 
+      setTimeout(() => {
+        if (monsterStage === 1) {
+          monsterStage = 2;
+          monsterHP = 100;
+          monsterVisualAlpha = 255; // 重置下一隻怪物的透明度
+          message = "第一隻怪物倒下了！第二隻出現了！";
+          screenShake = 30;
+          newQuestion();
+        } else {
+          pendingState = "VICTORY";
+        }
+        isResolving = false;
+      }, defeatDelay);
+      return; // 攔截下方的預設 setTimeout
     }
     
     // 延遲一點點時間再出新題目，讓玩家看清楚命中效果
@@ -783,14 +823,26 @@ function windowResized(){ resizeCanvas(windowWidth, windowHeight); }
 // 粒子類別 (用於魔法命中特效)
 //========================
 class Particle {
-  constructor(x, y, isSuper = false) {
+  constructor(x, y, isSuper = false, isConfetti = false) {
     this.pos = createVector(x, y);
+    this.isConfetti = isConfetti;
+
+    if (this.isConfetti) {
+      // 撒花模式：隨機向下移動，帶有輕微左右晃動
+      this.vel = createVector(random(-2, 2), random(1, 4));
+      this.lifespan = 255;
+      this.size = random(8, 20);
+      // 金色、黃色與隨機繽紛色
+      let r = random(1);
+      if (r < 0.6) this.color = [255, 215, random(0, 50)]; // 金色系
+      else if (r < 0.8) this.color = [255, 255, 255]; // 白色
+      else this.color = [random(255), random(255), random(255)]; // 彩色
+    } else {
     // 隨機向四周發散，大爆炸 (isSuper) 時速度與動量更大
     let maxVel = isSuper ? 22 : 12;
     this.vel = p5.Vector.random2D().mult(random(3, maxVel));
     this.lifespan = 255;
     this.size = isSuper ? random(10, 40) : random(6, 18);
-    
     if (isSuper) {
       // 死亡大爆炸顏色：青色、紫色與純白交織 (魔法感)
       let r = random(1);
@@ -801,12 +853,18 @@ class Particle {
       // 普通命中顏色：從白色到金黃、橘色隨機
       this.color = [255, random(180, 255), random(0, 100)];
     }
+    }
   }
 
   update() {
     this.pos.add(this.vel);
-    this.vel.mult(0.92); // 模擬空氣阻力，速度會越來越慢
-    this.lifespan -= 8;   // 逐漸淡出
+    if (this.isConfetti) {
+      this.vel.y += 0.05; // 重力效果
+      this.lifespan -= 1.5; // 較慢的消失速度
+    } else {
+      this.vel.mult(0.92); // 模擬空氣阻力
+      this.lifespan -= 8;   // 快速淡出
+    }
   }
 
   display() {
@@ -818,4 +876,85 @@ class Particle {
   isDead() {
     return this.lifespan < 0;
   }
+}
+
+//========================
+// 勝利畫面專用的旋轉魔法陣
+//========================
+function drawVictoryMagicCircle(x, y, opacity = 255) {
+  push();
+  translate(x, y);
+  
+  let rot = frameCount * 0.01;
+  noFill();
+  let aScale = opacity / 255; // 用於計算所有顏色的透明度比例
+  
+  // 外圈呼吸光環
+  for (let i = 0; i < 5; i++) {
+    stroke(180, 100, 255, (40 - i * 8) * aScale);
+    strokeWeight(4);
+    ellipse(0, 0, 450 + i * 10 + sin(frameCount * 0.02) * 20);
+  }
+  
+  // 六角幾何底陣 - 增加層次感
+  stroke(0, 255, 255, 40 * aScale);
+  strokeWeight(1);
+  push();
+  rotate(rot * 0.2);
+  for(let i = 0; i < 2; i++) {
+    rotate(PI / 3);
+    rectMode(CENTER);
+    rect(0, 0, 310, 310);
+  }
+  pop();
+
+  // 符文細節層 - 增加神祕的虛線圈
+  stroke(180, 100, 255, 80 * aScale);
+  strokeWeight(1);
+  drawingContext.setLineDash([10, 15]);
+  push();
+  rotate(rot * 0.5);
+  ellipse(0, 0, 440);
+  rotate(-rot * 0.8);
+  ellipse(0, 0, 390);
+  pop();
+  drawingContext.setLineDash([]); // 重置虛線設定
+
+  // 旋轉的主圓環
+  rotate(rot);
+  stroke(180, 100, 255, 180 * aScale);
+  strokeWeight(2);
+  ellipse(0, 0, 420);
+  
+  // 符文刻線與點點裝飾 (12方位)
+  for(let i = 0; i < 12; i++) {
+    rotate(TWO_PI / 12);
+    stroke(0, 255, 255, 150 * aScale);
+    line(185, 0, 210, 0); 
+    // 方位符文框 (每 90 度出現一個)
+    if (i % 3 === 0) {
+      rectMode(CENTER);
+      noFill();
+      rect(250, 0, 15, 15);
+    }
+    noStroke();
+    fill(0, 255, 255, 120 * aScale);
+    circle(225, 0, 4);
+  }
+
+  // 內部的幾何三角陣 (反向旋轉)
+  rotate(-rot * 1.5);
+  noFill();
+  stroke(0, 255, 255, 120 * aScale);
+  for(let i = 0; i < 3; i++) {
+    rotate(TWO_PI / 3);
+    strokeWeight(2);
+    triangle(-150, 80, 150, 80, 0, -180);
+    // 核心能量連接線
+    line(0, 0, 0, -80);
+    // 內部的圓形符文
+    strokeWeight(1);
+    ellipse(0, -110, 35);
+  }
+  pop();
 }
