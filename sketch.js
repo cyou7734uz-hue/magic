@@ -30,7 +30,9 @@ let monsterImg2;
 let victoryImg;
 let playBgImg;
 let gameOverImg;
+let mistakeBgImg;
 let monsterStage = 1; // 追蹤目前是第幾個怪物
+let lastEndState = "GAMEOVER"; // 紀錄最後是勝利還是失敗進入結算
 let mistakes = []; // 儲存答錯的題目資訊
 let selectedAcademy = "MATH";
 let fadeAlpha = 0;
@@ -74,6 +76,7 @@ function preload() {
   playBgImg = loadImage('圖/1-0.png');
   victoryImg = loadImage('圖/666.png');
   gameOverImg = loadImage('圖/777.png');
+  mistakeBgImg = loadImage('圖/67.png');
   bgMusic = loadSound('音樂.mp3');
   gameOverSound = loadSound('7.mp3');
 }
@@ -174,6 +177,7 @@ function draw(){
     let currentBg = coverImg;
     if (gameState === "VICTORY" && victoryImg) currentBg = victoryImg;
     if (gameState === "GAMEOVER" && gameOverImg) currentBg = gameOverImg;
+    if (gameState === "MISTAKES" && mistakeBgImg) currentBg = mistakeBgImg;
 
     if (!currentBg) background(50);
     else image(currentBg, 0, 0, width, height);
@@ -263,14 +267,24 @@ function draw(){
       textSize(32);
       text("你成功保衛了魔法學院，獲得分數：" + score, width / 2, height / 2 + 50);
 
-      let backBtnX = width / 2 - 100;
-      let backBtnY = height - 220;
-      let isHoverBack = mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60;
-      if (isHoverBack) cursor(HAND); else cursor(ARROW);
-      fill(isHoverBack ? color(100, 200, 100) : color(60, 150, 60));
+      let btnY = height - 220;
+      // 錯題回顧按鈕
+      let revBtnX = width / 2 - 210;
+      let isHoverRev = mouseX > revBtnX && mouseX < revBtnX + 200 && mouseY > btnY && mouseY < btnY + 60;
+      fill(isHoverRev ? color(100, 100, 250) : color(60, 60, 150));
       stroke(255);
-      rect(backBtnX, backBtnY, 200, 60, 10);
-      fill(255); noStroke(); text("回到首頁", width / 2, backBtnY + 30);
+      rect(revBtnX, btnY, 200, 60, 10);
+      fill(255); noStroke(); textAlign(CENTER, CENTER); text("錯題回顧", revBtnX + 100, btnY + 30);
+
+      // 回到首頁按鈕
+      let homeBtnX = width / 2 + 10;
+      let isHoverHome = mouseX > homeBtnX && mouseX < homeBtnX + 200 && mouseY > btnY && mouseY < btnY + 60;
+      fill(isHoverHome ? color(100, 200, 100) : color(60, 150, 60));
+      stroke(255);
+      rect(homeBtnX, btnY, 200, 60, 10);
+      fill(255); noStroke(); text("回到首頁", homeBtnX + 100, btnY + 30);
+
+      if (isHoverRev || isHoverHome) cursor(HAND); else cursor(ARROW);
 
       // 撒花特效：在勝利畫面持續產生落下粒子
       if (frameCount % 2 === 0) {
@@ -301,11 +315,10 @@ function draw(){
 
       if (isHoverRev || isHoverHome) cursor(HAND); else cursor(ARROW);
     } else if (gameState === "MISTAKES") {
-      if (infoBgImg) image(infoBgImg, 100, 50, width - 200, height - 100);
-      else { fill(0, 0, 0, 200); rect(100, 50, width - 200, height - 100, 20); }
-
-      fill(101, 67, 33);
-      textAlign(CENTER); textSize(36); text("錯題本", width/2, 110);
+      // 背景已在底層繪製為 67.png，此處移除所有遮罩以完整顯示背景圖
+      fill(101, 67, 33); // 改回深褐色文字，與羊皮紙背景對比
+      textAlign(CENTER); textSize(36); 
+      text("錯題本", width/2, 110);
       
       textSize(22); textAlign(LEFT);
       let startY = 170;
@@ -386,6 +399,7 @@ function draw(){
         setTimeout(() => {
           if (playerHP <= 0) {
             pendingState = "GAMEOVER";
+            lastEndState = "GAMEOVER";
           } else {
             newQuestion();
             isResolving = false;
@@ -720,17 +734,18 @@ function mousePressed() {
         }
       }
     }
-  } else if (gameState === "GAMEOVER") {
+  } else if (gameState === "VICTORY" || gameState === "GAMEOVER") {
     let btnY = height - 220;
     if (mouseY > btnY && mouseY < btnY + 60) {
       if (mouseX > width/2 - 210 && mouseX < width/2 - 10) pendingState = "MISTAKES";
       if (mouseX > width/2 + 10 && mouseX < width/2 + 210) pendingState = "START";
     }
-  } else if (gameState === "VICTORY" || gameState === "MISTAKES") {
+  } else if (gameState === "MISTAKES") {
     let backBtnX = width / 2 - 100;
-    let backBtnY = (gameState === "MISTAKES") ? height - 150 : height - 220;
+    let backBtnY = height - 150;
     if (mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60) {
-      pendingState = (gameState === "MISTAKES") ? "GAMEOVER" : "START";
+      // 如果是從勝利進入，返回首頁；如果是失敗進入，則返回失敗畫面
+      pendingState = (lastEndState === "VICTORY") ? "START" : "GAMEOVER";
     }
   }
 }
@@ -1009,6 +1024,7 @@ function checkAnswer(card){
           newQuestion();
         } else {
           pendingState = "VICTORY";
+          lastEndState = "VICTORY";
         }
         isResolving = false;
       }, defeatDelay);
@@ -1037,6 +1053,7 @@ function checkAnswer(card){
     if (playerHP <= 0) {
       playerHP = 0;
       pendingState = "GAMEOVER";
+      lastEndState = "GAMEOVER";
     } else {
       card.x = card.originalX; card.y = card.originalY;
       isResolving = false;
