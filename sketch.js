@@ -8,6 +8,9 @@ let answerBox;
 let question;
 let correctAnswer;
 
+let bgMusic;
+let gameOverSound;
+let isMusicPlaying = false;
 let selectedCard = null; // 目前被捏合選取中的卡片
 let selectedCardPinched = false; // 只有捏合觸發的選取
 let selectedCardState = 'idle'; // idle, dragging
@@ -26,6 +29,7 @@ let monsterImg;
 let monsterImg2;
 let victoryImg;
 let playBgImg;
+let gameOverImg;
 let monsterStage = 1; // 追蹤目前是第幾個怪物
 let selectedAcademy = "MATH";
 let fadeAlpha = 0;
@@ -35,6 +39,7 @@ let pendingState = null;
 let monsterVisualAlpha = 255; // 用於控制怪物被打敗時的透明度
 let particles = []; // 粒子陣列
 let monsterHP = 100;
+let playerHP = 100;
 let score = 0;
 let screenShake = 0; // 畫面震動強度
 
@@ -66,6 +71,9 @@ function preload() {
   monsterImg2 = loadImage('圖/1-2.png');
   playBgImg = loadImage('圖/1-0.png');
   victoryImg = loadImage('圖/666.png');
+  gameOverImg = loadImage('圖/777.png');
+  bgMusic = loadSound('音樂.mp3');
+  gameOverSound = loadSound('7.mp3');
 }
 
 //========================
@@ -160,8 +168,11 @@ function draw(){
   drawingContext.filter = 'none';
 
   // --- 1. 背景底圖層 ---
-  if (gameState === "START" || gameState === "INFO" || gameState === "SELECT" || gameState === "VICTORY") {
-    let currentBg = (gameState === "VICTORY" && victoryImg) ? victoryImg : coverImg;
+  if (gameState === "START" || gameState === "INFO" || gameState === "SELECT" || gameState === "VICTORY" || gameState === "GAMEOVER") {
+    let currentBg = coverImg;
+    if (gameState === "VICTORY" && victoryImg) currentBg = victoryImg;
+    if (gameState === "GAMEOVER" && gameOverImg) currentBg = gameOverImg;
+
     if (!currentBg) background(50);
     else image(currentBg, 0, 0, width, height);
 
@@ -199,10 +210,10 @@ function draw(){
       textAlign(CENTER);
       textSize(24);
       textAlign(LEFT);
-      let infoText = "1. 觀察畫面中央出現的乘法魔法題。\n" +
-                     "2. 使用食指與大拇指在空中「捏合」來抓取答案卡。\n" +
-                     "3. 將正確答案拖曳至下方的「回答魔法陣」。\n" +
-                     "4. 答對可削減怪物 HP，將其擊敗獲得高分！";
+      let infoText = "1. 選擇心儀的學院後，觀察畫面中央出現的魔法題目。\n" +
+                     "2. 使用食指與大拇指在空中進行「捏合」手勢來抓取答案卡。\n" +
+                     "3. 將正確的答案卡拖曳至下方的「回答魔法陣」中釋放。\n" +
+                     "4. 成功答對即可施展強大的攻擊，擊敗怪物守護學院！";
       text(infoText, width/2 - 250, height/2 - 50);
 
       let backBtnX = width/2 - 100;
@@ -263,6 +274,20 @@ function draw(){
       if (frameCount % 2 === 0) {
         particles.push(new Particle(random(width), -20, false, true));
       }
+    } else if (gameState === "GAMEOVER") {
+      fill(255);
+      textAlign(CENTER, CENTER);
+      textSize(32);
+      text("魔法學院失守了... 你被打敗了！", width / 2, height / 2 + 50);
+
+      let backBtnX = width / 2 - 100;
+      let backBtnY = height - 220;
+      let isHoverBack = mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60;
+      if (isHoverBack) cursor(HAND); else cursor(ARROW);
+      fill(isHoverBack ? color(200, 80, 80) : color(150, 50, 50));
+      stroke(255);
+      rect(backBtnX, backBtnY, 200, 60, 10);
+      fill(255); noStroke(); text("回到首頁", width / 2, backBtnY + 30);
     }
 
   } else if (gameState === "PLAY") {
@@ -393,12 +418,29 @@ function draw(){
 
   // --- 3. 轉場效果 ---
   handleTransition();
+
+  // --- 4. 全域 UI 層 (如音樂開關) ---
+  drawMusicToggle();
 }
 
 //========================
 // UI
 //========================
 function drawUI(){
+  // 玩家血量過低警告 (紅光邊框脈動效果)
+  if (playerHP < 30 && playerHP > 0 && !isPaused) {
+    push();
+    noFill();
+    // 使用多層次的描邊來模擬漸層紅光
+    for (let i = 0; i < 6; i++) {
+      let pulse = map(sin(frameCount * 0.1), -1, 1, 20, 100);
+      stroke(255, 0, 0, pulse / (i + 1));
+      strokeWeight(i * 30 + 20);
+      rect(0, 0, width, height);
+    }
+    pop();
+  }
+
   fill(255); textAlign(CENTER); textSize(35); text(question, width/2, 50);
 
   let monsterFloat = sin(millis() * 0.002) * 15; // 計算緩慢上下擺動的位移
@@ -438,8 +480,13 @@ function drawUI(){
   fill(255,0,0); rect(width/2-100, height/2-130 + monsterFloat, monsterHP*2, 20, 20);
   fill(255); textSize(18); text("HP:"+monsterHP, width/2, height/2-100 + monsterFloat);
 
-  // 分數
+  // 分數與玩家血量 (左上角)
   textAlign(LEFT); textSize(24); text("分數:"+score, 20,40);
+  
+  // 玩家血條
+  fill(80); rect(20, 60, 200, 20, 20);
+  fill(0, 255, 0); rect(20, 60, playerHP * 2, 20, 20);
+  fill(255); textSize(18); text("玩家 HP:"+playerHP, 20, 100);
 
   // 提示 (暫停時隱藏)
   if (!isPaused) {
@@ -517,6 +564,13 @@ function drawUI(){
 // 點擊事件：切換遊戲狀態
 //========================
 function mousePressed() {
+  // 全域音樂開關偵測
+  let mx = width - 40;
+  let my = 100;
+  if (dist(mouseX, mouseY, mx, my) < 20) {
+    toggleMusic();
+    return;
+  }
   if (gameState === "START" && btnImg) {
     let baseW = 450;
     let baseH = btnImg.height * (baseW / btnImg.width);
@@ -570,11 +624,42 @@ function mousePressed() {
         }
       }
     }
-  } else if (gameState === "VICTORY") {
+  } else if (gameState === "VICTORY" || gameState === "GAMEOVER") {
     let backBtnX = width / 2 - 100;
     let backBtnY = height - 220;
     if (mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60) pendingState = "START";
   }
+}
+
+function drawMusicToggle() {
+  let x = width - 40;
+  let y = 100;
+  let r = 20;
+  let isHover = dist(mouseX, mouseY, x, y) < r;
+
+  push();
+  if (isHover) cursor(HAND);
+  fill(isHover ? color(150, 150, 150, 200) : color(80, 80, 80, 150));
+  stroke(255);
+  strokeWeight(2);
+  circle(x, y, r * 2);
+  fill(255);
+  noStroke();
+  textAlign(CENTER, CENTER);
+  textSize(20);
+  text(isMusicPlaying ? "🔊" : "🔇", x, y);
+  pop();
+}
+
+function toggleMusic() {
+  if (!bgMusic) return;
+  if (typeof userStartAudio === 'function') userStartAudio(); // 啟動音訊環境
+  if (isMusicPlaying) {
+    bgMusic.pause();
+  } else {
+    bgMusic.loop();
+  }
+  isMusicPlaying = !isMusicPlaying;
 }
 
 //========================
@@ -587,12 +672,32 @@ function handleTransition() {
       gameState = pendingState;
       if (gameState === "PLAY") newQuestion();
       if (gameState === "START") {
+        playerHP = 100;
         monsterHP = 100;
         monsterStage = 1;
         score = 0;
         monsterVisualAlpha = 255;
+        isResolving = false;
         isPaused = false;
         particles = []; // 回到首頁時清空粒子
+
+        // 從死亡畫面返回首頁時，重新播放背景音樂
+        if (bgMusic && !bgMusic.isPlaying()) {
+          bgMusic.loop();
+          isMusicPlaying = true; // 同步更新音樂圖示狀態
+        }
+        // 確保停止死亡音效，避免音樂重疊
+        if (gameOverSound && gameOverSound.isPlaying()) {
+          gameOverSound.stop();
+        }
+      }
+      // 當進入死亡畫面時播放音效
+      if (gameState === "GAMEOVER") {
+        if (bgMusic && bgMusic.isPlaying()) {
+          bgMusic.stop();
+          isMusicPlaying = false; // 更新音樂開關狀態
+        }
+        if (gameOverSound) gameOverSound.play();
       }
       pendingState = null;
     }
@@ -808,9 +913,23 @@ function checkAnswer(card){
       isResolving = false;
     }, 500);
   } else {
-    message = "咒語失敗！";
-    card.x = card.originalX; card.y = card.originalY;
-    isResolving = false;
+    // 玩家答錯：遭受怪物攻擊
+    message = "咒語失敗！遭受怪物反擊！";
+    playerHP -= 20;
+    screenShake = 20; // 遭受攻擊時震動更強烈
+
+    // 產生受傷粒子 (紅色)
+    for (let i = 0; i < 30; i++) {
+      particles.push(new Particle(width / 2, height - 100, false, false, [255, 50, 50]));
+    }
+
+    if (playerHP <= 0) {
+      playerHP = 0;
+      pendingState = "GAMEOVER";
+    } else {
+      card.x = card.originalX; card.y = card.originalY;
+      isResolving = false;
+    }
   }
 }
 
@@ -823,7 +942,7 @@ function windowResized(){ resizeCanvas(windowWidth, windowHeight); }
 // 粒子類別 (用於魔法命中特效)
 //========================
 class Particle {
-  constructor(x, y, isSuper = false, isConfetti = false) {
+  constructor(x, y, isSuper = false, isConfetti = false, customColor = null) {
     this.pos = createVector(x, y);
     this.isConfetti = isConfetti;
 
@@ -853,6 +972,11 @@ class Particle {
       // 普通命中顏色：從白色到金黃、橘色隨機
       this.color = [255, random(180, 255), random(0, 100)];
     }
+    }
+
+    // 若有指定顏色則覆蓋
+    if (customColor) {
+      this.color = customColor;
     }
   }
 
