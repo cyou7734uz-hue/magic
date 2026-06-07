@@ -31,6 +31,7 @@ let victoryImg;
 let playBgImg;
 let gameOverImg;
 let monsterStage = 1; // 追蹤目前是第幾個怪物
+let mistakes = []; // 儲存答錯的題目資訊
 let selectedAcademy = "MATH";
 let fadeAlpha = 0;
 let isPaused = false;
@@ -43,6 +44,7 @@ let playerHP = 100;
 let score = 0;
 let screenShake = 0; // 畫面震動強度
 
+let stageTimer = 20; // 倒數計時
 let message = "用食指抓取答案卡，拖到魔法陣";
 
 // 平滑與參數
@@ -168,7 +170,7 @@ function draw(){
   drawingContext.filter = 'none';
 
   // --- 1. 背景底圖層 ---
-  if (gameState === "START" || gameState === "INFO" || gameState === "SELECT" || gameState === "VICTORY" || gameState === "GAMEOVER") {
+  if (gameState === "START" || gameState === "INFO" || gameState === "SELECT" || gameState === "VICTORY" || gameState === "GAMEOVER" || gameState === "MISTAKES") {
     let currentBg = coverImg;
     if (gameState === "VICTORY" && victoryImg) currentBg = victoryImg;
     if (gameState === "GAMEOVER" && gameOverImg) currentBg = gameOverImg;
@@ -280,14 +282,51 @@ function draw(){
       textSize(32);
       text("魔法學院失守了... 你被打敗了！", width / 2, height / 2 + 50);
 
+      let btnY = height - 220;
+      // 錯題回顧按鈕
+      let revBtnX = width / 2 - 210;
+      let isHoverRev = mouseX > revBtnX && mouseX < revBtnX + 200 && mouseY > btnY && mouseY < btnY + 60;
+      fill(isHoverRev ? color(100, 100, 250) : color(60, 60, 150));
+      stroke(255);
+      rect(revBtnX, btnY, 200, 60, 10);
+      fill(255); noStroke(); textAlign(CENTER, CENTER); text("錯題回顧", revBtnX + 100, btnY + 30);
+
+      // 回到首頁按鈕
+      let homeBtnX = width / 2 + 10;
+      let isHoverHome = mouseX > homeBtnX && mouseX < homeBtnX + 200 && mouseY > btnY && mouseY < btnY + 60;
+      fill(isHoverHome ? color(200, 80, 80) : color(150, 50, 50));
+      stroke(255);
+      rect(homeBtnX, btnY, 200, 60, 10);
+      fill(255); noStroke(); text("回到首頁", homeBtnX + 100, btnY + 30);
+
+      if (isHoverRev || isHoverHome) cursor(HAND); else cursor(ARROW);
+    } else if (gameState === "MISTAKES") {
+      if (infoBgImg) image(infoBgImg, 100, 50, width - 200, height - 100);
+      else { fill(0, 0, 0, 200); rect(100, 50, width - 200, height - 100, 20); }
+
+      fill(101, 67, 33);
+      textAlign(CENTER); textSize(36); text("錯題本", width/2, 110);
+      
+      textSize(22); textAlign(LEFT);
+      let startY = 170;
+      if (mistakes.length === 0) {
+        text("目前沒有錯誤紀錄，繼續保持！", width/2 - 150, startY);
+      } else {
+        // 顯示最近的 12 筆錯題
+        for (let i = 0; i < min(mistakes.length, 12); i++) {
+          let m = mistakes[i];
+          text(`${i+1}. 題目: ${m.q}  |  正確: ${m.a} (你選: ${m.wrong})`, 150, startY + i * 40);
+        }
+      }
+
       let backBtnX = width / 2 - 100;
-      let backBtnY = height - 220;
+      let backBtnY = height - 150;
       let isHoverBack = mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60;
       if (isHoverBack) cursor(HAND); else cursor(ARROW);
-      fill(isHoverBack ? color(200, 80, 80) : color(150, 50, 50));
+      fill(isHoverBack ? 150 : 100, 50, 150);
       stroke(255);
       rect(backBtnX, backBtnY, 200, 60, 10);
-      fill(255); noStroke(); text("回到首頁", width / 2, backBtnY + 30);
+      fill(255); noStroke(); textAlign(CENTER, CENTER); text("返回", width/2, backBtnY + 30);
     }
 
   } else if (gameState === "PLAY") {
@@ -324,6 +363,36 @@ function draw(){
     drawingContext.filter = 'none'; // 重置濾鏡，確保 UI 不會被模糊
     fill(0,0,0,120); rect(0,0,width,height);
     drawUI();
+  }
+
+  // --- 第二關限時邏輯 ---
+  if (gameState === "PLAY" && monsterStage === 2 && !isPaused && !isResolving) {
+    // 每 60 幀約為 1 秒
+    if (frameCount % 60 === 0 && stageTimer > 0) {
+      stageTimer--;
+      
+      // 時間到！觸發處罰
+      if (stageTimer <= 0) {
+        isResolving = true;
+        message = "太慢了！遭受怪物反擊！";
+        playerHP -= 20;
+        screenShake = 20;
+        
+        // 產生受傷粒子
+        for (let i = 0; i < 30; i++) {
+          particles.push(new Particle(width / 2, height - 100, false, false, [255, 50, 50]));
+        }
+
+        setTimeout(() => {
+          if (playerHP <= 0) {
+            pendingState = "GAMEOVER";
+          } else {
+            newQuestion();
+            isResolving = false;
+          }
+        }, 1000);
+      }
+    }
   }
 
   // 更新並繪製粒子 (移至外部，讓所有狀態皆可顯示特效)
@@ -442,6 +511,33 @@ function drawUI(){
   }
 
   fill(255); textAlign(CENTER); textSize(35); text(question, width/2, 50);
+
+  // 顯示計時器 (僅限第二關) - 圓形環狀倒數
+  if (monsterStage === 2 && !isPaused && gameState === "PLAY") {
+    push();
+    let centerX = width - 65; // 向左平移約 0.5 公分 (20像素)
+    let centerY = 210; // 稍微下調以維持視覺比例
+    let radius = 50;   // 圓環放大
+    let isLowTime = stageTimer <= 5;
+
+    // 1. 背景圓環 (淡色底)
+    noFill(); stroke(255, 50); strokeWeight(6);
+    ellipse(centerX, centerY, radius * 2);
+
+    // 2. 進度弧線 (由 -90度 開始，順時針旋轉)
+    let endAngle = map(stageTimer, 0, 20, -HALF_PI, TWO_PI - HALF_PI);
+    let col = isLowTime ? color(255, 50, 50, map(sin(frameCount * 0.2), -1, 1, 150, 255)) : color(0, 255, 150);
+    stroke(col); strokeWeight(8); strokeCap(ROUND);
+    arc(centerX, centerY, radius * 2, radius * 2, -HALF_PI, endAngle);
+
+    // 3. 內部文字與沙漏標籤
+    fill(255); noStroke();
+    textAlign(CENTER, CENTER); textSize(18);
+    text(stageTimer + "s", centerX, centerY);
+    textSize(20);
+    text("⏳", centerX, centerY - radius - 20);
+    pop();
+  }
 
   let monsterFloat = sin(millis() * 0.002) * 15; // 計算緩慢上下擺動的位移
 
@@ -624,10 +720,18 @@ function mousePressed() {
         }
       }
     }
-  } else if (gameState === "VICTORY" || gameState === "GAMEOVER") {
+  } else if (gameState === "GAMEOVER") {
+    let btnY = height - 220;
+    if (mouseY > btnY && mouseY < btnY + 60) {
+      if (mouseX > width/2 - 210 && mouseX < width/2 - 10) pendingState = "MISTAKES";
+      if (mouseX > width/2 + 10 && mouseX < width/2 + 210) pendingState = "START";
+    }
+  } else if (gameState === "VICTORY" || gameState === "MISTAKES") {
     let backBtnX = width / 2 - 100;
-    let backBtnY = height - 220;
-    if (mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60) pendingState = "START";
+    let backBtnY = (gameState === "MISTAKES") ? height - 150 : height - 220;
+    if (mouseX > backBtnX && mouseX < backBtnX + 200 && mouseY > backBtnY && mouseY < backBtnY + 60) {
+      pendingState = (gameState === "MISTAKES") ? "GAMEOVER" : "START";
+    }
   }
 }
 
@@ -676,6 +780,7 @@ function handleTransition() {
         monsterHP = 100;
         monsterStage = 1;
         score = 0;
+        mistakes = []; // 重置錯題紀錄
         monsterVisualAlpha = 255;
         isResolving = false;
         isPaused = false;
@@ -856,6 +961,9 @@ function newQuestion() {
     let item = random(data); question = "考證: " + item.q + " 所屬時代？"; correctAnswer = item.a; answers = [item.a, ...item.w];
   }
 
+  // 重置計時器 (若為第二關)
+  stageTimer = 20;
+
   answers = shuffle(answers);
   let startX = width/2 - 220; cards = [];
   for (let i=0;i<3;i++){
@@ -914,6 +1022,9 @@ function checkAnswer(card){
     }, 500);
   } else {
     // 玩家答錯：遭受怪物攻擊
+    // 紀錄錯題
+    mistakes.push({ q: question, a: correctAnswer, wrong: card.value });
+
     message = "咒語失敗！遭受怪物反擊！";
     playerHP -= 20;
     screenShake = 20; // 遭受攻擊時震動更強烈
